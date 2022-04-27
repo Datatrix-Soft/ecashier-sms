@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\SmsBalance;
+use App\Models\SmsBilling;
 use App\Models\SmsDetail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -205,11 +206,14 @@ class SmsController extends Controller
         }
 
         $sms_balance = SmsBalance::where('subscription_id', $request->input('subscription_id'))->where('user_id', $request->input('user_id'))->first();
+        $sms_details = SmsDetail::where('subscription_id', $request->input('subscription_id'))->where('sender_id', $request->input('user_id'))->get();
 
         if ($sms_balance) {
             $output = [
                 'status' => true,
-                'sms_balance' => $sms_balance,
+                'sms_balance' => $sms_balance->balance,
+                'sms_details' => $sms_details,
+                'sms_count' => $sms_details->sum('sms_count'),
                 'message' => 'Success!'
             ];
         } else {
@@ -222,5 +226,64 @@ class SmsController extends Controller
 
         return response()->json($output);
 
+    }
+
+    public function update(Request $request)
+    {
+        //validation rules
+        $rules = [
+            'user_id' => 'required',
+            'subscription_id' => 'required',
+            'app_secret_key' => 'required',
+            'payment_type' => 'required',
+            'payment_status' => 'required'
+        ];
+
+        //validation check
+        $validator = Validator::make($request->all(), $rules);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => false,
+                'errors' => $validator->errors()
+            ]);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $balance = SmsBalance::where('subscription_id', $request->input('subscription_id'))->where('user_id', $request->input('user_id'))->first();
+            $balance->balance = $balance->balance + $request->input('balance');
+
+
+            if ($balance->save()) {
+                //store billing information
+                $billing = new SmsBilling();
+                $billing->subscription_id = $request->input('subscription_id');
+                $billing->user_id = $request->input('user_id');
+                $billing->bill_number = SmsBilling::billNumber();
+                $billing->paid = $request->input('paid_amount');
+                $billing->payment_type = $request->input('payment_type');
+                $billing->payment_status = 'paid';
+                $billing->save();
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Congratulation! SMS balance has been updated successfully',
+                'balance' => SmsBalance::where('subscription_id', $request->input('subscription_id'))->where('user_id', $request->input('user_id'))->first()
+            ]);
+
+
+        }catch(\Exception $e) {
+
+            DB::rollBack();
+            return response()->json([
+                'status' => false,
+                'message' => 'An error occurred while recharge sms balance: ' . $e->getMessage()
+            ]);
+        }
     }
 }

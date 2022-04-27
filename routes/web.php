@@ -17,10 +17,11 @@ use Illuminate\Support\Facades\Route;
 $router->get('/', function () use ($router) {
     return $router->app->version();
 });
- 
+
 Route::group(['prefix' => 'sms'], function () {
     Route::get('/list', 'SmsController@index');
     Route::post('/create', 'SmsController@store');
     Route::post('bulk/create', 'SmsController@bulkStore');
     Route::get('/balance', 'SmsController@getBalance');
+    Route::post('/update', 'SmsController@update');
 });
